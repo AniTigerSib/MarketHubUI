@@ -1,3 +1,4 @@
+import { useAppStore } from '@/stores/app'
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '@/views/HomeView.vue'
 import SearchView from '@/views/SearchView.vue'
@@ -19,6 +20,16 @@ const router = createRouter({
     { path: '/account', name: 'account', component: AccountView },
     { path: '/auth', name: 'auth', component: AuthView },
   ],
+})
+
+router.beforeEach(async (to) => {
+  const store = useAppStore()
+  await store.restoreSession()
+  if ((to.name === 'account' || to.name === 'post') && !store.user) {
+    store.back = String(to.name)
+    store.authTab = 'login'
+    return { name: 'auth', query: { redirect: to.fullPath } }
+  }
 })
 
 export default router

@@ -32,10 +32,10 @@ function onPost() {
   if (!store.user) {
     store.$patch({
       reason: 'loginToPost',
-      back: (route.name as string) || 'home',
+      back: 'post',
       authTab: 'login',
     })
-    router.push({ name: 'auth' })
+    router.push({ name: 'auth', query: { redirect: '/post' } })
     return
   }
   router.push({ name: 'post' })
@@ -43,7 +43,7 @@ function onPost() {
 function onFavs() {
   if (!store.user) {
     store.$patch({ reason: 'loginToFav', back: (route.name as string) || 'home', authTab: 'login' })
-    router.push({ name: 'auth' })
+    router.push({ name: 'auth', query: { redirect: route.fullPath } })
     return
   }
   store.acctTab = 'favorites'
@@ -52,7 +52,7 @@ function onFavs() {
 function onMsgs() {
   if (!store.user) {
     store.$patch({ reason: 'loginToMsg', back: (route.name as string) || 'home', authTab: 'login' })
-    router.push({ name: 'auth' })
+    router.push({ name: 'auth', query: { redirect: route.fullPath } })
     return
   }
   store.acctTab = 'messages'
@@ -196,7 +196,7 @@ const catsWithIcons = computed(() =>
                   back: (route.name as string) || 'home',
                   authTab: 'login',
                 })
-                router.push({ name: 'auth' })
+                router.push({ name: 'auth', query: { redirect: route.fullPath } })
               }
             "
             style="font-size: 13px; padding: 2px 4px"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { listings, cities, fmtPrice, fmtAgo, i18n, blankForm, type Listing } from '@/data'
@@ -37,6 +37,29 @@ function card(l: Listing) {
   }
 }
 
+const displayName = ref('')
+const phone = ref('')
+const avatarUrl = ref('')
+const saving = ref(false)
+const profileError = ref('')
+const profileSaved = ref(false)
+watch(() => store.user, user => {
+  displayName.value = user?.displayName || ''
+  phone.value = user?.phone || ''
+  avatarUrl.value = user?.avatarUrl || ''
+}, { immediate: true })
+async function saveProfile() {
+  if (saving.value) return
+  saving.value = true
+  profileError.value = ''
+  profileSaved.value = false
+  try {
+    await store.updateProfile({ displayName: displayName.value.trim(), phone: phone.value.trim() || null, avatarUrl: avatarUrl.value.trim() || null })
+    profileSaved.value = true
+  } catch (error) { profileError.value = error instanceof Error ? error.message : 'Please try again.' }
+  finally { saving.value = false }
+}
+
 // ── Account navigation ───────────────────────────────────────────────────────
 const unread = computed(() => store.threads.reduce((a, x) => a + x.unread, 0))
 const favCount = computed(() => allListings.value.filter((x) => store.favs[x.id]).length)
@@ -49,10 +72,6 @@ const acctNav = computed(() => [
 ])
 
 function setTab(id: string) {
-  if (id === 'settings') {
-    store.showToast(tr('soonSettings'))
-    return
-  }
   store.acctTab = id as typeof store.acctTab
 }
 
@@ -222,6 +241,20 @@ function openThreadListing() {
         <i class="ph ph-plus" style="font-size: 18px"></i>{{ t.post }}
       </button>
     </aside>
+
+    <section v-if="store.acctTab === 'settings'" style="max-width: 480px; width: 100%">
+      <h1>{{ t.settings }}</h1>
+      <form @submit.prevent="saveProfile" style="display: grid; gap: 16px">
+        <p v-if="profileError" role="alert">{{ profileError }}</p>
+        <p v-if="profileSaved" role="status">{{ store.lang === 'ru' ? 'Профиль сохранён.' : 'Profile saved.' }}</p>
+        <div class="field"><label>{{ store.lang === 'ru' ? 'Имя пользователя' : 'Username' }}</label><input class="input" :value="store.user?.username" disabled /></div>
+        <div class="field"><label>{{ t.email }}</label><input class="input" :value="store.user?.email" disabled /></div>
+        <div class="field"><label>{{ t.name }}</label><input v-model="displayName" class="input" required maxlength="64" autocomplete="name" :disabled="saving" /></div>
+        <div class="field"><label>{{ t.phone }}</label><input v-model="phone" class="input" type="tel" pattern="\+[1-9][0-9]{6,14}" placeholder="+79000000000" autocomplete="tel" :disabled="saving" /></div>
+        <div class="field"><label>{{ store.lang === 'ru' ? 'Ссылка на аватар' : 'Avatar URL' }}</label><input v-model="avatarUrl" class="input" type="url" pattern="https?://.*" maxlength="2048" :disabled="saving" /></div>
+        <button class="btn btn-primary" :disabled="saving">{{ store.lang === 'ru' ? 'Сохранить' : 'Save profile' }}</button>
+      </form>
+    </section>
 
     <!-- ── Tab: My Listings ───────────────────────────────────────────────── -->
     <section v-if="store.acctTab === 'listings'" style="display: flex; flex-direction: column; gap: 16px; min-width: 0">

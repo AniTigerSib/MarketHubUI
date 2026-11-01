@@ -105,7 +105,7 @@ function openListing(id: number) {
 function onWrite() {
   if (!store.user) {
     store.$patch({ reason: 'loginToMsg', back: 'listing', authTab: 'login' })
-    router.push({ name: 'auth' })
+    router.push({ name: 'auth', query: { redirect: route.fullPath } })
     return
   }
   const s = sel.value
@@ -117,7 +117,7 @@ function onWrite() {
 function onPhone() {
   if (!store.user) {
     store.$patch({ reason: 'loginToMsg', back: 'listing', authTab: 'login' })
-    router.push({ name: 'auth' })
+    router.push({ name: 'auth', query: { redirect: route.fullPath } })
     return
   }
   store.phoneShown = { ...store.phoneShown, [l.value.id]: true }
@@ -126,7 +126,7 @@ function onPhone() {
 function onFav() {
   if (!store.user) {
     store.$patch({ reason: 'loginToFav', back: 'listing', authTab: 'login' })
-    router.push({ name: 'auth' })
+    router.push({ name: 'auth', query: { redirect: route.fullPath } })
     return
   }
   store.toggleFav(l.value.id)

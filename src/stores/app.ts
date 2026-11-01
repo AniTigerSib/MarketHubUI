@@ -1,3 +1,8 @@
+import { ApiError } from '@/services/api'
+import * as authApi from '@/services/authApi'
+import * as userApi from '@/services/userApi'
+import type { Tokens } from '@/services/authApi'
+import type { Profile, ProfileUpdate } from '@/services/userApi'
 import { defineStore } from 'pinia'
 import {
   type Lang,
@@ -25,7 +30,9 @@ export interface AppState {
   city: string
   sort: 'new' | 'cheap' | 'exp'
   favs: Record<number, boolean>
-  user: { name: string } | null
+  user: (Profile & { name: string }) | null
+  tokens: Tokens | null
+  sessionReady: boolean
   authTab: 'signup' | 'login'
   reason: string
   back: string
@@ -47,6 +54,8 @@ export interface AppState {
   form: PostForm
 }
 
+let refreshing: Promise<void> | null = null
+
 let _toastTimer: ReturnType<typeof setTimeout> | null = null
 
 export const useAppStore = defineStore('app', {
@@ -64,6 +73,8 @@ export const useAppStore = defineStore('app', {
     sort: 'new',
     favs: { 2: true, 4: true, 6: true, 9: true, 12: true, 16: true },
     user: null,
+    tokens: null,
+    sessionReady: false,
     authTab: 'signup',
     reason: '',
     back: 'home',
@@ -206,14 +217,106 @@ export const useAppStore = defineStore('app', {
       this.acctTab = 'messages'
     },
 
-    doLogin(name: string) {
-      const t = i18n[this.lang]
-      this.user = { name }
-      this.showToast(t.welcome + ', ' + name)
+    saveTokens(tokens: Tokens | null) {
+      this.tokens = tokens
+      if (tokens) sessionStorage.setItem('markethub.tokens', JSON.stringify(tokens))
+      else sessionStorage.removeItem('markethub.tokens')
     },
 
-    doLogout() {
+    async restoreSession() {
+      if (this.sessionReady) return
+      try {
+        const saved = sessionStorage.getItem('markethub.tokens')
+        if (saved) {
+          this.tokens = JSON.parse(saved)
+          await this.loadProfile()
+        }
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.status === 401 || error.status === 403) {
+          this.saveTokens(null)
+        }
+      } finally {
+        this.sessionReady = true
+      }
+    },
+
+    async refreshSession() {
+      if (!refreshing) {
+        const token = this.tokens?.refreshToken
+        if (!token) throw new ApiError(401, 'Please log in again.')
+        refreshing = authApi
+          .refresh(token)
+          .then((tokens) => {
+            if (this.tokens?.refreshToken !== token)
+              throw new ApiError(401, 'Session ended. Please log in again.')
+            this.saveTokens(tokens)
+          })
+          .catch((error) => {
+            if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+              this.saveTokens(null)
+              this.user = null
+            }
+            throw error
+          })
+          .finally(() => {
+            refreshing = null
+          })
+      }
+      await refreshing
+    },
+
+    async authorized<T>(operation: (accessToken: string) => Promise<T>): Promise<T> {
+      if (!this.tokens) throw new ApiError(401, 'Please log in again.')
+      try {
+        return await operation(this.tokens.accessToken)
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.status !== 401) throw error
+        await this.refreshSession()
+        return operation(this.tokens!.accessToken)
+      }
+    },
+
+    async loadProfile() {
+      // Registration publishes the profile asynchronously; allow time for the event consumer.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const profile = await this.authorized(userApi.getMe)
+          this.user = { ...profile, name: profile.displayName || profile.username }
+          return
+        } catch (error) {
+          if (!(error instanceof ApiError) || error.status !== 404 || attempt >= 4) throw error
+          await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)))
+        }
+      }
+    },
+
+    async doLogin(login: string, password: string) {
+      this.saveTokens(await authApi.login(login, password))
+      await this.loadProfile()
+      this.showToast(i18n[this.lang].welcome + ', ' + this.user!.name)
+    },
+
+    async register(username: string, email: string, password: string, displayName: string) {
+      await authApi.register({ username, email, password, displayName })
+    },
+
+    async updateProfile(body: ProfileUpdate) {
+      const profile = await this.authorized((token) => userApi.updateMe(token, body))
+      this.user = { ...profile, name: profile.displayName || profile.username }
+    },
+
+    async doLogout() {
+      const tokens = this.tokens
+      this.saveTokens(null)
       this.user = null
+      this.acctTab = 'listings'
+      if (tokens) {
+        try {
+          await authApi.logout(tokens.refreshToken, tokens.accessToken)
+        } catch {
+          this.showToast('Signed out locally. Server logout could not be confirmed.')
+        }
+      }
     },
 
     openThread(id: number) {
